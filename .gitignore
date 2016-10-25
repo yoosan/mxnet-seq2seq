@@ -1,0 +1,11 @@
+.idea/
+dataset.py
+data/process_a.txt
+data/process_b.txt
+data/test.txt
+lstm_test.py
+lstm_bucketing.py
+bucket_io.py
+misc.py
+*.iml
+.DS_STORE
