@@ -65,7 +65,7 @@ def lstm_unroll( num_lstm_layer, seq_len, input_size,
         last_states.append(state)
     assert (len(last_states) == num_lstm_layer)
 
-    # embeding layer
+    # embedding layer
     data = mx.sym.Variable('data')
     label = mx.sym.Variable('softmax_label')
     embed = mx.sym.Embedding(data=data, input_dim=input_size,
@@ -97,8 +97,18 @@ def lstm_unroll( num_lstm_layer, seq_len, input_size,
     pred = mx.sym.FullyConnected(data=hidden_concat, num_hidden=num_label,
                                  weight=cls_weight, bias=cls_bias, name='pred')
 
+    ################################################################################
+    # Make label the same shape as our produced data path
+    # I did not observe big speed difference between the following two ways
+
     label = mx.sym.transpose(data=label)
     label = mx.sym.Reshape(data=label, target_shape=(0,))
+
+    # label_slice = mx.sym.SliceChannel(data=label, num_outputs=seq_len)
+    # label = [label_slice[t] for t in range(seq_len)]
+    # label = mx.sym.Concat(*label, dim=0)
+    # label = mx.sym.Reshape(data=label, target_shape=(0,))
+    ################################################################################
 
     sm = mx.sym.SoftmaxOutput(data=pred, label=label, name='softmax')
 
@@ -203,3 +213,11 @@ def lstm_inference_symbol( num_lstm_layer, input_size,
         output.append(state.c)
         output.append(state.h)
     return mx.sym.Group(output)
+
+
+def perplexity( label, pred ):
+    label = label.T.reshape((-1,))
+    loss = 0.
+    for i in range(pred.shape[0]):
+        loss += -np.log(max(1e-10, pred[i][int(label[i])]))
+    return np.exp(loss / label.size)

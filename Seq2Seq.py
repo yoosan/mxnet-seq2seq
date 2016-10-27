@@ -3,6 +3,7 @@ import numpy as np
 import mxnet as mx
 from lstm import lstm_unroll, lstm_without_softmax
 from data import Seq2SeqIter, default_build_vocab
+from tqdm import tqdm
 import logging
 
 
@@ -112,7 +113,7 @@ class Seq2Seq(object):
         param_blocks.append((i, arg_dict[name], args_grad[name], name))
 
     def train( self, data ):
-        for iter in data:
+        for iter in tqdm(data):
             enc_batch_in = iter['enc_batch_in']
             dec_batch_in = iter['dec_batch_in']
             dec_batch_tr = iter['dec_batch_tr']
@@ -122,7 +123,10 @@ class Seq2Seq(object):
             self.dec_lstm_exe.arg_dict['data'] = dec_batch_in
             self.dec_lstm_exe.arg_dict['softmax_label'] = dec_batch_tr
 
+            # the output of dec_lstm_exe.forward is [batch_size * seq_len, vocab_size]
             self.dec_lstm_exe.forward(is_train=True)
+            # print dec_batch_in.shape
+            # print self.dec_lstm_exe.outputs[0].shape
             self.dec_lstm_exe.backward()
 
             grad_out = self.dec_lstm_exe.grad_arrays[4]
@@ -134,12 +138,14 @@ class Seq2Seq(object):
 
 if __name__ == '__main__':
     vocab, vocab_rsd = default_build_vocab('./data/vocab.txt')
-    data = Seq2SeqIter(source_path='./data/a.txt', target_path='./data/b.txt', vocab=vocab,
-                       vocab_rsd=vocab_rsd, batch_size=5, max_len=25,
+    print 'vocab size is %d' % len(vocab)
+    data = Seq2SeqIter(data_path='data.pickle', source_path='./data/a.txt',
+                       target_path='./data/b.txt', vocab=vocab,
+                       vocab_rsd=vocab_rsd, batch_size=36, max_len=25,
                        data_name='data', label_name='label', split_char='\n',
                        text2id=None, read_content=None, model_parallel=False)
-
-    model = Seq2Seq(seq_len=25, batch_size=5, num_layers=1,
-                    input_size=len(vocab), embed_size=20, hidden_size=10,
+    print 'data size is %d' % data.size
+    model = Seq2Seq(seq_len=25, batch_size=36, num_layers=1,
+                    input_size=len(vocab), embed_size=150, hidden_size=150,
                     output_size=len(vocab), dropout=0.0, mx_ctx=mx.cpu())
     model.train(data)

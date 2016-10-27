@@ -3,6 +3,7 @@
 import sys, nltk
 import numpy as np
 import mxnet as mx
+import h5py, pickle
 
 
 def default_read_content( path ):
@@ -77,11 +78,18 @@ def default_gen_buckets( len_dict, batch_size ):
 
 
 class Seq2SeqIter(mx.io.DataIter):
-    def __init__( self, source_path, target_path, vocab, vocab_rsd, batch_size,
+    def __init__( self, data_path, source_path, target_path, vocab, vocab_rsd, batch_size,
                   max_len, data_name='data', label_name='label', split_char='\n',
-                  text2id=None, read_content=None, model_parallel=False ):
+                  text2id=None, read_content=None, model_parallel=False, ctx=mx.cpu()):
         super(Seq2SeqIter, self).__init__()
 
+        self.ctx = ctx
+        self.iter_data = []
+        if data_path is not None:
+            print 'loading data set'
+            with open(data_path, 'r') as f:
+                self.iter_data = pickle.load(f)
+                self.size = len(self.iter_data)
         self.vocab = vocab
         self.vocab_rsd = vocab_rsd
         self.vocab_size = len(vocab)
@@ -90,7 +98,9 @@ class Seq2SeqIter(mx.io.DataIter):
         self.model_parallel = model_parallel
         self.batch_size = batch_size
         self.max_len = max_len
-        self.iter_data = []
+        self.source_path = source_path
+        self.target_path = target_path
+        self.split_char = split_char
 
         if text2id is None:
             self.text2id = default_text2id
@@ -101,11 +111,15 @@ class Seq2SeqIter(mx.io.DataIter):
         else:
             self.read_content = read_content
 
-        source = self.read_content(source_path)
-        source_lines = source.split(split_char)
+        if len(self.iter_data) == 0:
+            self.iter_data = self.make_data_iter_plan()
 
-        target = self.read_content(target_path)
-        target_lines = target.split(split_char)
+    def make_data_iter_plan( self ):
+        source = self.read_content(self.source_path)
+        source_lines = source.split(self.split_char)
+
+        target = self.read_content(self.target_path)
+        target_lines = target.split(self.split_char)
 
         self.size = len(source_lines)
         self.suffer_ids = np.random.permutation(self.size)
@@ -113,12 +127,9 @@ class Seq2SeqIter(mx.io.DataIter):
         self.enc_inputs = []
         self.dec_inputs = []
         self.dec_targets = []
-
         len_dict = {}
-        self.data_buffer = {}
-        # for i in range(self.size):
         cnt = 0
-        for i in range(1000):
+        for i in range(self.size):
             source = source_lines[i]
             target = target_lines[i]
             t1 = source.split('\t\t')
@@ -128,8 +139,8 @@ class Seq2SeqIter(mx.io.DataIter):
             tt, tu = t2[0], t2[1]
             dec_input = []
             dec_target = []
-            s_tokens = self.text2id(st, vocab_rsd, max_len, vocab)
-            t_tokens = self.text2id(tt, vocab_rsd, max_len, vocab)
+            s_tokens = self.text2id(st, vocab_rsd, self.max_len, vocab)
+            t_tokens = self.text2id(tt, vocab_rsd, self.max_len, vocab)
             self.enc_inputs.append(s_tokens)
             dec_input.append(self.vocab_rsd['<go>'])
             dec_input[1:len(t_tokens) + 1] = t_tokens[:]
@@ -146,8 +157,6 @@ class Seq2SeqIter(mx.io.DataIter):
         self.buckets = default_gen_buckets(len_dict, self.batch_size)
         self.len_dict = len_dict
         self.size = cnt
-
-    def make_data_iter_plan( self ):
         bucket_n_batches = {}
         for l, n in self.len_dict.items():
             if l < 3:
@@ -176,30 +185,33 @@ class Seq2SeqIter(mx.io.DataIter):
                     'dec_target': dec_target
                 })
 
+        iter_data = []
         for l, n in self.len_dict.items():
             for k in range(0, n, self.batch_size):
-                if k + self.batch_size >= n: break
-
+                if k + self.batch_size >= self.size: break
                 encin_batch = np.zeros((self.batch_size, self.max_len))
                 decin_batch = np.zeros((self.batch_size, l))
                 dectr_batch = np.zeros((self.batch_size, l))
-
+                if n < self.batch_size: break
                 for j in range(self.batch_size):
-                    one = data_buffer[l][k + j]
+                    one = data_buffer[l][j]
                     encin = one['enc_input']
                     offset = self.max_len - len(encin)
                     encin_batch[j][offset:] = encin
                     decin_batch[j] = one['dec_input']
                     dectr_batch[j] = one['dec_target']
 
-                self.iter_data.append({
+                iter_data.append({
                     'enc_batch_in': encin_batch,
                     'dec_batch_in': decin_batch,
                     'dec_batch_tr': dectr_batch
                 })
+        with open('data.pickle', 'w') as f:
+            print 'dumping data'
+            pickle.dump(iter_data, f)
+        return iter_data
 
     def __iter__( self ):
-        self.make_data_iter_plan()
         for batch in self.iter_data:
             yield batch
 
@@ -226,9 +238,9 @@ class SimpleBatch(object):
 
 if __name__ == '__main__':
     vocab, vocab_rsd = default_build_vocab('./data/vocab.txt')
-    data = Seq2SeqIter(source_path='./data/a.txt', target_path='./data/b.txt', vocab=vocab,
-                       vocab_rsd=vocab_rsd, batch_size=5, max_len=25,
+    data = Seq2SeqIter(data_path=None,source_path='./data/a.txt', target_path='./data/b.txt',
+                       vocab=vocab, vocab_rsd=vocab_rsd, batch_size=36, max_len=25,
                        data_name='data', label_name='label', split_char='\n',
                        text2id=None, read_content=None, model_parallel=False)
     for iter in data:
-        print iter['enc_batch_in']
+        print iter['enc_batch_in'].shape

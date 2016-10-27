@@ -8,4 +8,5 @@ lstm_bucketing.py
 bucket_io.py
 misc.py
 *.iml
+test.py
 .DS_STORE
