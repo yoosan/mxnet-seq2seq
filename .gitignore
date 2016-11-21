@@ -9,7 +9,12 @@ bucket_io.py
 misc.py
 *.iml
 test.py
-*bak.py
+lstm_bak.py
+seq2seq_bak.py
 *.pickle
 *.pyc
 .DS_STORE
+bucket_io.pyc
+data.pickle
+lstm_copy.pyc
+lstm_test.pyc
