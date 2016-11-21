@@ -11,4 +11,5 @@ misc.py
 test.py
 *bak.py
 *.pickle
+*.pyc
 .DS_STORE
