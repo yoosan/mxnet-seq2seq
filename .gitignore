@@ -9,4 +9,6 @@ bucket_io.py
 misc.py
 *.iml
 test.py
+*bak.py
+*.pickle
 .DS_STORE

@@ -48,7 +48,9 @@ def lstm( num_hidden, indata, prev_state, param, seqidx, layeridx, dropout=0. ):
 # making the mini-batch size of the label different from the data.
 # I think the existing data-parallelization code need some modification
 # to allow this situation to work properly
-def dec_lstm_unroll( num_lstm_layer, seq_len, num_hidden, num_label, dropout=0. ):
+def lstm_unroll( num_lstm_layer, seq_len, input_size,
+                 num_hidden, num_embed, num_label, dropout=0. ):
+    embed_weight = mx.sym.Variable("embed_weight")
     cls_weight = mx.sym.Variable("cls_weight")
     cls_bias = mx.sym.Variable("cls_bias")
     param_cells = []
@@ -66,7 +68,9 @@ def dec_lstm_unroll( num_lstm_layer, seq_len, num_hidden, num_label, dropout=0. 
     # embedding layer
     data = mx.sym.Variable('data')
     label = mx.sym.Variable('softmax_label')
-    wordvec = mx.sym.SliceChannel(data=data, num_outputs=seq_len, squeeze_axis=1)
+    embed = mx.sym.Embedding(data=data, input_dim=input_size,
+                             weight=embed_weight, output_dim=num_embed, name='embed')
+    wordvec = mx.sym.SliceChannel(data=embed, num_outputs=seq_len, squeeze_axis=1)
 
     hidden_all = []
     for seqidx in range(seq_len):
@@ -111,8 +115,11 @@ def dec_lstm_unroll( num_lstm_layer, seq_len, num_hidden, num_label, dropout=0. 
     return sm
 
 
-# same with lstm_unroll, but without softmax layer
-def enc_lstm_unroll( num_lstm_layer, seq_len, num_hidden, dropout=0. ):
+# same with lstm_unroll, but with softmax layer
+
+def lstm_without_softmax( num_lstm_layer, seq_len, input_size,
+                          num_hidden, num_embed, dropout=0. ):
+    embed_weight = mx.sym.Variable("embed_weight")
     param_cells = []
     last_states = []
     for i in range(num_lstm_layer):
@@ -125,8 +132,11 @@ def enc_lstm_unroll( num_lstm_layer, seq_len, num_hidden, dropout=0. ):
         last_states.append(state)
     assert (len(last_states) == num_lstm_layer)
 
+    # embeding layer
     data = mx.sym.Variable('data')
-    wordvec = mx.sym.SliceChannel(data=data, num_outputs=seq_len, squeeze_axis=1)
+    embed = mx.sym.Embedding(data=data, input_dim=input_size,
+                             weight=embed_weight, output_dim=num_embed, name='embed')
+    wordvec = mx.sym.SliceChannel(data=embed, num_outputs=seq_len, squeeze_axis=1)
 
     hidden_all = []
     for seqidx in range(seq_len):
@@ -152,6 +162,55 @@ def enc_lstm_unroll( num_lstm_layer, seq_len, num_hidden, dropout=0. ):
     hidden_concat = mx.sym.Concat(*hidden_all, dim=0)
 
     return hidden
+
+
+def lstm_inference_symbol( num_lstm_layer, input_size,
+                           num_hidden, num_embed, num_label, dropout=0. ):
+    seqidx = 0
+    embed_weight = mx.sym.Variable("embed_weight")
+    cls_weight = mx.sym.Variable("cls_weight")
+    cls_bias = mx.sym.Variable("cls_bias")
+    param_cells = []
+    last_states = []
+    for i in range(num_lstm_layer):
+        param_cells.append(LSTMParam(i2h_weight=mx.sym.Variable("l%d_i2h_weight" % i),
+                                     i2h_bias=mx.sym.Variable("l%d_i2h_bias" % i),
+                                     h2h_weight=mx.sym.Variable("l%d_h2h_weight" % i),
+                                     h2h_bias=mx.sym.Variable("l%d_h2h_bias" % i)))
+        state = LSTMState(c=mx.sym.Variable("l%d_init_c" % i),
+                          h=mx.sym.Variable("l%d_init_h" % i))
+        last_states.append(state)
+    assert (len(last_states) == num_lstm_layer)
+    data = mx.sym.Variable("data")
+
+    hidden = mx.sym.Embedding(data=data,
+                              input_dim=input_size,
+                              output_dim=num_embed,
+                              weight=embed_weight,
+                              name="embed")
+    # stack LSTM
+    for i in range(num_lstm_layer):
+        if i == 0:
+            dp = 0.
+        else:
+            dp = dropout
+        next_state = lstm(num_hidden, indata=hidden,
+                          prev_state=last_states[i],
+                          param=param_cells[i],
+                          seqidx=seqidx, layeridx=i, dropout=dp)
+        hidden = next_state.h
+        last_states[i] = next_state
+    # decoder
+    if dropout > 0.:
+        hidden = mx.sym.Dropout(data=hidden, p=dropout)
+    fc = mx.sym.FullyConnected(data=hidden, num_hidden=num_label,
+                               weight=cls_weight, bias=cls_bias, name='pred')
+    sm = mx.sym.SoftmaxOutput(data=fc, name='softmax')
+    output = [sm]
+    for state in last_states:
+        output.append(state.c)
+        output.append(state.h)
+    return mx.sym.Group(output)
 
 
 def perplexity( label, pred ):

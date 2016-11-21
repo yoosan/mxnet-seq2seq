@@ -6,6 +6,14 @@ import mxnet as mx
 import h5py, pickle
 
 
+def Perplexity( label, pred ):
+    label = label.T.reshape((-1,))
+    loss = 0.
+    for i in range(pred.shape[0]):
+        loss += -np.log(max(1e-10, pred[i][int(label[i])]))
+    return np.exp(loss / label.size)
+
+
 def default_read_content( path ):
     with open(path) as ins:
         content = ins.read()
@@ -80,7 +88,7 @@ def default_gen_buckets( len_dict, batch_size ):
 class Seq2SeqIter(mx.io.DataIter):
     def __init__( self, data_path, source_path, target_path, vocab, vocab_rsd, batch_size,
                   max_len, data_name='data', label_name='label', split_char='\n',
-                  text2id=None, read_content=None, model_parallel=False, ctx=mx.cpu()):
+                  text2id=None, read_content=None, model_parallel=False, ctx=mx.cpu() ):
         super(Seq2SeqIter, self).__init__()
 
         self.ctx = ctx
@@ -238,9 +246,11 @@ class SimpleBatch(object):
 
 if __name__ == '__main__':
     vocab, vocab_rsd = default_build_vocab('./data/vocab.txt')
-    data = Seq2SeqIter(data_path=None,source_path='./data/a.txt', target_path='./data/b.txt',
-                       vocab=vocab, vocab_rsd=vocab_rsd, batch_size=36, max_len=25,
+    data = Seq2SeqIter(data_path='data.pickle', source_path='./data/a.txt', target_path='./data/b.txt',
+                       vocab=vocab, vocab_rsd=vocab_rsd, batch_size=10, max_len=25,
                        data_name='data', label_name='label', split_char='\n',
                        text2id=None, read_content=None, model_parallel=False)
     for iter in data:
-        print iter['enc_batch_in'].shape
+        print 'enc input size is (%d, %d), and dec size is (%d, %d)' % \
+              (iter['enc_batch_in'].shape[0], iter['enc_batch_in'].shape[1],
+               iter['dec_batch_in'].shape[0], iter['dec_batch_in'].shape[1])

@@ -1,8 +1,8 @@
 import random
 import numpy as np
 import mxnet as mx
-from lstm import lstm_unroll, lstm_without_softmax
-from data import Seq2SeqIter, default_build_vocab
+from lstm_bak import lstm_unroll, lstm_without_softmax
+from datautils import Seq2SeqIter, default_build_vocab
 from tqdm import tqdm
 import logging
 
@@ -29,10 +29,16 @@ class Seq2Seq(object):
         opt.lr = 0.05
         self.updater = mx.optimizer.get_updater(opt)
 
+
+    def build_emb_layer(self):
+        data = mx.sym.Variable('data')
+        embed_weight = mx.sym.Variable("embed_weight")
+        embed = mx.sym.Embedding(data=data, input_dim=self.input_size,
+                                 weight=embed_weight, output_dim=self.output_size, name='embed')
+
     def build_lstm_encoder( self ):
         enc_lstm = lstm_without_softmax(num_lstm_layer=self.num_layers, seq_len=self.seq_len,
-                                        input_size=self.input_size, num_hidden=self.hidden_size,
-                                        num_embed=self.embed_size, dropout=0.)
+                                        input_size=self.input_size, num_hidden=self.hidden_size, dropout=0.)
         init_c = [('l%d_init_c' % l, (self.batch_size, self.hidden_size)) for l in range(self.num_layers)]
         init_h = [('l%d_init_h' % l, (self.batch_size, self.hidden_size)) for l in range(self.num_layers)]
         init_states = init_c + init_h
@@ -81,7 +87,7 @@ class Seq2Seq(object):
         for shape, name in zip(arg_shape, arg_names):
             args[name] = mx.nd.zeros(shape, self.mx_ctx)
             if name in ['softmax_label', 'data'] or name.endswith('init_c'):
-                continue
+                grad_req[name] = 'null'
             args_grad[name] = mx.nd.zeros(shape, self.mx_ctx)
             grad_req[name] = 'write'
 
@@ -136,16 +142,21 @@ class Seq2Seq(object):
                 self.updater(i, grad_params, params)
 
 
+def train_muti_epoch( model, data, epoch ):
+    for i in tqdm(range(epoch)):
+        model.train(data)
+
+
 if __name__ == '__main__':
     vocab, vocab_rsd = default_build_vocab('./data/vocab.txt')
     print 'vocab size is %d' % len(vocab)
     data = Seq2SeqIter(data_path='data.pickle', source_path='./data/a.txt',
                        target_path='./data/b.txt', vocab=vocab,
-                       vocab_rsd=vocab_rsd, batch_size=36, max_len=25,
+                       vocab_rsd=vocab_rsd, batch_size=10, max_len=25,
                        data_name='data', label_name='label', split_char='\n',
                        text2id=None, read_content=None, model_parallel=False)
     print 'data size is %d' % data.size
-    model = Seq2Seq(seq_len=25, batch_size=36, num_layers=1,
-                    input_size=len(vocab), embed_size=150, hidden_size=150,
+    model = Seq2Seq(seq_len=25, batch_size=10, num_layers=1,
+                    input_size=len(vocab), embed_size=300, hidden_size=300,
                     output_size=len(vocab), dropout=0.0, mx_ctx=mx.cpu())
-    model.train(data)
+    train_muti_epoch(model=model, data=data, epoch=20)
