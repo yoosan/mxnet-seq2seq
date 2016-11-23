@@ -12,7 +12,7 @@ def main(**kwargs):
     vocab, vocab_rsd = default_build_vocab('./data/vocab.txt')
     vocab_size = len(vocab)
     print 'vocabulary size is %d' % vocab_size
-    data = Seq2SeqIter(data_path='./data/data.pickle', source_path='./data/a.txt',
+    data = Seq2SeqIter(data_path=None, source_path='./data/a.txt',
                        target_path='./data/b.txt', vocab=vocab,
                        vocab_rsd=vocab_rsd, batch_size=10, max_len=25,
                        data_name='data', label_name='label', split_char='\n',

@@ -214,8 +214,8 @@ class Seq2SeqIter(mx.io.DataIter):
                     'dec_batch_in': decin_batch,
                     'dec_batch_tr': dectr_batch
                 })
-        with open('data.pickle', 'w') as f:
-            print 'dumping data'
+        with open('./data/data.pickle', 'w') as f:
+            print 'dumping data ...'
             pickle.dump(iter_data, f)
         return iter_data
 
