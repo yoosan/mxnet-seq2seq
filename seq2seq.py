@@ -7,6 +7,7 @@ from lstm import enc_lstm_unroll, dec_lstm_unroll
 from datautils import Seq2SeqIter, default_build_vocab
 from datautils import SimpleBatch, Perplexity, default_text2id
 
+
 class Seq2Seq(object):
     def __init__( self, seq_len, batch_size, num_layers,
                   input_size, embed_size, hidden_size,
@@ -33,7 +34,6 @@ class Seq2Seq(object):
         # self.eval_encoder = self.build_lstm_encoder(is_train=False)
         # self.eval_decoder = self.build_lstm_decoder(is_train=False)
 
-
     def gen_embed_sym( self ):
         data = mx.sym.Variable('data')
         embed_weight = mx.sym.Variable("embed_weight")
@@ -42,7 +42,7 @@ class Seq2Seq(object):
                                      output_dim=self.embed_size, name='embed')
         return embed_sym
 
-    def build_embed_dict( self, default_bucket, is_train=True):
+    def build_embed_dict( self, default_bucket, is_train=True ):
         sym = self.gen_embed_sym()
         batch = self.batch_size if is_train else 1
         if len(self.embed_dict.keys()) > 1:
@@ -124,9 +124,9 @@ class Seq2Seq(object):
 
         return encoder
 
-    def build_lstm_decoder( self, is_train=True, bef_args=None):
+    def build_lstm_decoder( self, is_train=True, bef_args=None ):
         def gen_dec_sym( seq_len ):
-            sym = dec_lstm_unroll(1, seq_len, self.hidden_size, len(vocab), 0., is_train=is_train)
+            sym = dec_lstm_unroll(1, seq_len, self.hidden_size, self.input_size, 0., is_train=is_train)
             data_names = ['data'] + ['l0_init_c', 'l0_init_h']
             label_names = ['softmax_label']
             return (sym, data_names, label_names)
@@ -208,8 +208,8 @@ class Seq2Seq(object):
                 ppl = ppl + cur_ppl
 
                 print 'epoch %d, ppl is %f' % (i, cur_ppl)
+
     # TODO
-    def eval(self, sentence, vocab_rsd, vocab):
+    def eval( self, sentence, vocab_rsd, vocab ):
         ids = default_text2id(sentence, vocab_rsd, 15, vocab)
         print ids
-
