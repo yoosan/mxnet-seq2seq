@@ -48,7 +48,7 @@ def lstm( num_hidden, indata, prev_state, param, seqidx, layeridx, dropout=0. ):
 # making the mini-batch size of the label different from the data.
 # I think the existing data-parallelization code need some modification
 # to allow this situation to work properly
-def dec_lstm_unroll( num_lstm_layer, seq_len, num_hidden, num_label, dropout=0. ):
+def dec_lstm_unroll( num_lstm_layer, seq_len, num_hidden, num_label, dropout=0., is_train=True):
     cls_weight = mx.sym.Variable("cls_weight")
     cls_bias = mx.sym.Variable("cls_bias")
     param_cells = []
@@ -93,19 +93,8 @@ def dec_lstm_unroll( num_lstm_layer, seq_len, num_hidden, num_label, dropout=0. 
     pred = mx.sym.FullyConnected(data=hidden_concat, num_hidden=num_label,
                                  weight=cls_weight, bias=cls_bias, name='pred')
 
-    ################################################################################
-    # Make label the same shape as our produced data path
-    # I did not observe big speed difference between the following two ways
-
     label = mx.sym.transpose(data=label)
     label = mx.sym.Reshape(data=label, target_shape=(0,))
-
-    # label_slice = mx.sym.SliceChannel(data=label, num_outputs=seq_len)
-    # label = [label_slice[t] for t in range(seq_len)]
-    # label = mx.sym.Concat(*label, dim=0)
-    # label = mx.sym.Reshape(data=label, target_shape=(0,))
-    ################################################################################
-
     sm = mx.sym.SoftmaxOutput(data=pred, label=label, name='softmax')
 
     return sm

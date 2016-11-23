@@ -5,12 +5,14 @@ import mxnet as mx
 from tqdm import tqdm
 from lstm import enc_lstm_unroll, dec_lstm_unroll
 from datautils import Seq2SeqIter, default_build_vocab
-from datautils import SimpleBatch, Perplexity
+from datautils import SimpleBatch, Perplexity, default_text2id
 
 class Seq2Seq(object):
     def __init__( self, seq_len, batch_size, num_layers,
                   input_size, embed_size, hidden_size,
                   output_size, dropout, mx_ctx=mx.cpu() ):
+        self.embed_dict = {}
+        self.eval_embed_dict = {}
         self.seq_len = seq_len
         self.batch_size = batch_size
         self.num_layers = num_layers
@@ -20,11 +22,17 @@ class Seq2Seq(object):
         self.dropout = dropout
         self.output_size = output_size
         self.ctx = mx_ctx
+        # for training
         self.embed = self.build_embed_dict(self.seq_len + 1)
         self.encoder = self.build_lstm_encoder()
         self.decoder = self.build_lstm_decoder()
         self.init_h = mx.nd.zeros((self.batch_size, self.hidden_size), self.ctx)
         self.init_c = mx.nd.zeros((self.batch_size, self.hidden_size), self.ctx)
+        # for evaluation
+        # self.eval_embed = self.build_embed_dict(self.seq_len+1, is_train=False)
+        # self.eval_encoder = self.build_lstm_encoder(is_train=False)
+        # self.eval_decoder = self.build_lstm_decoder(is_train=False)
+
 
     def gen_embed_sym( self ):
         data = mx.sym.Variable('data')
@@ -34,15 +42,23 @@ class Seq2Seq(object):
                                      output_dim=self.embed_size, name='embed')
         return embed_sym
 
-    def build_embed_dict( self, default_bucket ):
-        default_embed = self.build_embed_layer(default_bucket)
-        self.embed_dict = {}
+    def build_embed_dict( self, default_bucket, is_train=True):
         sym = self.gen_embed_sym()
+        batch = self.batch_size if is_train else 1
+        if len(self.embed_dict.keys()) > 1:
+            default_embed = self.embed_dict[0]
+            module = mx.mod.Module(symbol=sym, data_names=('data',), label_names=None, context=self.ctx)
+            module.bind(data_shapes=[('data', (batch, default_bucket))], label_shapes=None,
+                        for_training=is_train, force_rebind=False,
+                        shared_module=default_embed)
+        else:
+            default_embed = self.build_embed_layer(default_bucket, is_train=is_train)
 
         self.embed_dict[default_bucket] = default_embed
+
         for i in range(1, self.seq_len + 1):
             module = mx.mod.Module(symbol=sym, data_names=('data',), label_names=None, context=self.ctx)
-            module.bind(data_shapes=[('data', (self.batch_size, i))], label_shapes=None,
+            module.bind(data_shapes=[('data', (batch, i))], label_shapes=None,
                         for_training=default_embed.for_training,
                         inputs_need_grad=default_embed.inputs_need_grad,
                         force_rebind=False, shared_module=default_embed)
@@ -75,7 +91,7 @@ class Seq2Seq(object):
 
     def build_lstm_encoder( self, is_train=True, bef_args=None ):
         enc_lstm_sym = enc_lstm_unroll(num_lstm_layer=self.num_layers,
-                                       seq_len=self.seq_len, num_hidden=self.hidden_size, )
+                                       seq_len=self.seq_len, num_hidden=self.hidden_size)
         if is_train:
             encoder = mx.mod.Module(symbol=enc_lstm_sym, data_names=('data', 'l0_init_c', 'l0_init_h'),
                                     label_names=None, context=self.ctx)
@@ -102,36 +118,25 @@ class Seq2Seq(object):
             encoder.bind(data_shapes=[('data', (batch, self.seq_len, self.embed_size)),
                                       ('l0_init_c', (batch, self.hidden_size)),
                                       ('l0_init_h', (batch, self.hidden_size))],
-                         inputs_need_grad=True,
                          for_training=is_train)
 
             encoder.init_params(initializer=mx.init.Xavier(factor_type="in", magnitude=2.34), arg_params=bef_args)
 
         return encoder
 
-    def build_lstm_decoder( self, is_train=True, bef_args=None ):
-        basic_sym = dec_lstm_unroll(1, self.seq_len, self.hidden_size, len(vocab), dropout=0.)
-        grad_names = basic_sym.list_arguments()
-
+    def build_lstm_decoder( self, is_train=True, bef_args=None):
         def gen_dec_sym( seq_len ):
-            sym = dec_lstm_unroll(1, seq_len, self.hidden_size, len(vocab), 0.)
+            sym = dec_lstm_unroll(1, seq_len, self.hidden_size, len(vocab), 0., is_train=is_train)
             data_names = ['data'] + ['l0_init_c', 'l0_init_h']
             label_names = ['softmax_label']
             return (sym, data_names, label_names)
 
-        grad_req = {}
-        for name in grad_names:
-            if name in ['softmax_label']:
-                grad_req[name] = 'null'
-            else:
-                grad_req[name] = 'write'
         if is_train:
             decoder = mx.mod.BucketingModule(gen_dec_sym, default_bucket_key=self.seq_len + 1, context=self.ctx)
             decoder.bind(data_shapes=[('data', (self.batch_size, self.seq_len + 1, self.embed_size)),
                                       ('l0_init_c', (self.batch_size, self.hidden_size)),
                                       ('l0_init_h', (self.batch_size, self.hidden_size))],
                          label_shapes=[('softmax_label', (self.batch_size, self.seq_len + 1))],
-                         grad_req=grad_req,
                          inputs_need_grad=True,
                          for_training=is_train, )
 
@@ -150,7 +155,8 @@ class Seq2Seq(object):
             decoder.bind(data_shapes=[('data', (batch, self.seq_len + 1, self.embed_size)),
                                       ('l0_init_c', (batch, self.hidden_size)),
                                       ('l0_init_h', (batch, self.hidden_size))],
-                         for_training=is_train)
+                         label_shapes=['softmax_label'],
+                         for_training=False)
 
             decoder.init_params(initializer=mx.init.Xavier(factor_type="in", magnitude=2.34), arg_params=bef_args)
 
@@ -200,21 +206,10 @@ class Seq2Seq(object):
                                            dec_input_batch=dec_in,
                                            dec_target_batch=dec_tr)
                 ppl = ppl + cur_ppl
-            print 'epoch %d, ppl is %f' % (i, ppl)
 
-
-if __name__ == '__main__':
-    vocab, vocab_rsd = default_build_vocab('./data/vocab.txt')
-    print 'vocab size is %d' % len(vocab)
-    ctx = mx.cpu()
-    data = Seq2SeqIter(data_path='data.pickle', source_path='./data/a.txt',
-                       target_path='./data/b.txt', vocab=vocab,
-                       vocab_rsd=vocab_rsd, batch_size=10, max_len=25,
-                       data_name='data', label_name='label', split_char='\n',
-                       text2id=None, read_content=None, model_parallel=False)
-    print 'data size is %d' % data.size
-    model = Seq2Seq(seq_len=25, batch_size=10, num_layers=1,
-                    input_size=len(vocab), embed_size=150, hidden_size=150,
-                    output_size=len(vocab), dropout=0.0, mx_ctx=mx.cpu())
-    model.train(dataset=data, epoch=5)
+                print 'epoch %d, ppl is %f' % (i, cur_ppl)
+    # TODO
+    def eval(self, sentence, vocab_rsd, vocab):
+        ids = default_text2id(sentence, vocab_rsd, 15, vocab)
+        print ids
 

@@ -15,6 +15,6 @@ seq2seq_bak.py
 *.pyc
 .DS_STORE
 bucket_io.pyc
-data.pickle
+data/data.pickle
 lstm_copy.pyc
 lstm_test.pyc
