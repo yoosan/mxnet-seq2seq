@@ -21,13 +21,13 @@ python main.py
 
 ## The architecture
 
-We know that **seq2seq encoder-decoder** architecture includes two RNNs, one for encoding source sequence and another for decoding target sequence.
+We know that **seq2seq encoder-decoder** architecture includes two RNNs (LSTMs), one for encoding source sequence and another for decoding target sequence.
 
-For NLP-related tasks, the sequence could be a natural language sentence. As a result, the encoder and decoder should **share the word embedding layer**
+For NLP-related tasks, the sequence could be a natural language sentence. As a result, the encoder and decoder should **share the word embedding layer** .
 
-The bucketing is a grate solution adapting the arbitrariness of sequence length. I padding zero to a fixed length at the input sequence and make buckets at the decoding phrase. 
+The bucketing is a grate solution adapting the arbitrariness of sequence length. I padding zero to a fixed length at the encoding sequence and make buckets at the decoding phrase. 
 
-The data is the format as:
+The data is formatted as:
 
 ```
 0 0 ... 0 23 12 121 832 || 2 3432 898 7 323
