@@ -42,6 +42,29 @@ class Seq2Seq(object):
                                      output_dim=self.embed_size, name='embed')
         return embed_sym
 
+    def build_embed_layer( self, default_bucket, is_train=True, bef_args=None ):
+
+        embed_sym = self.gen_embed_sym()
+        if is_train:
+            embed = mx.mod.Module(symbol=embed_sym, data_names=('data',), label_names=None, context=self.ctx)
+
+            embed.bind(data_shapes=[('data', (self.batch_size, default_bucket)), ], for_training=is_train)
+
+            embed.init_params(initializer=mx.init.Xavier(factor_type="in", magnitude=2.34), arg_params=bef_args)
+            embed.init_optimizer(
+                optimizer='adam',
+                optimizer_params={
+                    'learning_rate': 0.02,
+                    'wd': 0.,
+                    'beta1': 0.5,
+                })
+        else:
+            batch = 1
+            embed = mx.mod.Module(symbol=embed_sym, data_names=('data',), label_names=None, context=self.ctx)
+            embed.bind(data_shapes=[('data', (batch, default_bucket)), ], for_training=is_train)
+            embed.init_params(initializer=mx.init.Xavier(factor_type="in", magnitude=2.34), arg_params=bef_args)
+        return embed
+
     def build_embed_dict( self, default_bucket, is_train=True ):
         sym = self.gen_embed_sym()
         batch = self.batch_size if is_train else 1
@@ -65,29 +88,6 @@ class Seq2Seq(object):
             module.borrow_optimizer(default_embed)
             self.embed_dict[i] = module
         return self.embed_dict
-
-    def build_embed_layer( self, default_bucket, is_train=True, bef_args=None ):
-
-        embed_sym = self.gen_embed_sym()
-        if is_train:
-            embed = mx.mod.Module(symbol=embed_sym, data_names=('data',), label_names=None, context=self.ctx)
-
-            embed.bind(data_shapes=[('data', (self.batch_size, default_bucket)), ], for_training=is_train)
-
-            embed.init_params(initializer=mx.init.Xavier(factor_type="in", magnitude=2.34), arg_params=bef_args)
-            embed.init_optimizer(
-                optimizer='adam',
-                optimizer_params={
-                    'learning_rate': 0.02,
-                    'wd': 0.,
-                    'beta1': 0.5,
-                })
-        else:
-            batch = 1
-            embed = mx.mod.Module(symbol=embed_sym, data_names=('data',), label_names=None, context=self.ctx)
-            embed.bind(data_shapes=[('data', (batch, default_bucket)), ], for_training=is_train)
-            embed.init_params(initializer=mx.init.Xavier(factor_type="in", magnitude=2.34), arg_params=bef_args)
-        return embed
 
     def build_lstm_encoder( self, is_train=True, bef_args=None ):
         enc_lstm_sym = enc_lstm_unroll(num_lstm_layer=self.num_layers,

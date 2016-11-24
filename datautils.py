@@ -3,7 +3,7 @@
 import sys, nltk
 import numpy as np
 import mxnet as mx
-import h5py, pickle
+import pickle
 
 
 def Perplexity( label, pred ):
@@ -123,6 +123,7 @@ class Seq2SeqIter(mx.io.DataIter):
             self.iter_data = self.make_data_iter_plan()
 
     def make_data_iter_plan( self ):
+        print 'processing the raw data '
         source = self.read_content(self.source_path)
         source_lines = source.split(self.split_char)
 
@@ -147,8 +148,8 @@ class Seq2SeqIter(mx.io.DataIter):
             tt, tu = t2[0], t2[1]
             dec_input = []
             dec_target = []
-            s_tokens = self.text2id(st, vocab_rsd, self.max_len, vocab)
-            t_tokens = self.text2id(tt, vocab_rsd, self.max_len, vocab)
+            s_tokens = self.text2id(st, self.vocab_rsd, self.max_len, self.vocab)
+            t_tokens = self.text2id(tt, self.vocab_rsd, self.max_len, self.vocab)
             self.enc_inputs.append(s_tokens)
             dec_input.append(self.vocab_rsd['<go>'])
             dec_input[1:len(t_tokens) + 1] = t_tokens[:]
@@ -246,7 +247,7 @@ class SimpleBatch(object):
 
 if __name__ == '__main__':
     vocab, vocab_rsd = default_build_vocab('./data/vocab.txt')
-    data = Seq2SeqIter(data_path='data.pickle', source_path='./data/a.txt', target_path='./data/b.txt',
+    data = Seq2SeqIter(data_path=None, source_path='./data/a.txt', target_path='./data/b.txt',
                        vocab=vocab, vocab_rsd=vocab_rsd, batch_size=10, max_len=25,
                        data_name='data', label_name='label', split_char='\n',
                        text2id=None, read_content=None, model_parallel=False)

@@ -10,6 +10,11 @@ This implementation borrows idea from **lstm_bucketing**, I slightly modified it
 
 ## How to run
 
+Firstly, process the data by
+```
+python datautils.py
+```
+then run the model by
 ```
 python main.py
 ```
